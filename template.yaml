@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Weather API serverless
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 15            # dos llamadas secuenciales de hasta 5 s cada una
+    Environment:
+      Variables:
+        LOG_LEVEL: info
+        GEOCODING_BASE_URL: https://geocoding-api.open-meteo.com
+        FORECAST_BASE_URL: https://api.open-meteo.com
+        UPSTREAM_TIMEOUT_MS: "5000"
+
+Resources:
+  WeatherFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/handler.ts
+    Properties:
+      Handler: handler.handler
+      Events:
+        GetWeather:
+          Type: Api
+          Properties:
+            Path: /weather
+            Method: get
+
+Outputs:
+  WeatherApiUrl:
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/weather"
