@@ -1,0 +1,291 @@
+openapi: 3.0.3
+info:
+  title: Weather API
+  description: |
+    API serverless que consulta Open-Meteo (geocoding + forecast), transforma la respuesta y la expone con un contrato propio.
+    
+    **Contrato:**
+    - Endpoint: `GET /weather?city={nombre_ciudad}`
+    - Respuesta exitosa con unidades tomadas de `current_units`
+    - Errores con formato uniforme `{ "error": { "code": "...", "message": "..." } }`
+  version: 1.0.0
+  contact:
+    name: Weather API
+tags:
+  - name: Weather
+    description: Consulta de clima por ciudad
+servers:
+  - url: http://localhost:4000
+    description: Servidor local (npm run dev)
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/Prod
+    description: API Gateway (producción)
+    variables:
+      apiId:
+        default: your-api-id
+        description: ID de API Gateway
+      region:
+        default: us-east-1
+        description: Región AWS
+paths:
+  /weather:
+    get:
+      tags:
+        - Weather
+      summary: Obtener clima actual por ciudad
+      description: |
+        Valida el parámetro `city`, consulta geocoding para obtener coordenadas, consulta forecast con esas coordenadas y transforma al contrato propio.
+      operationId: getWeather
+      parameters:
+        - name: city
+          in: query
+          required: true
+          description: Nombre de la ciudad (mínimo 2 caracteres, se recortan espacios)
+          schema:
+            type: string
+            minLength: 2
+            example: Bogotá
+      responses:
+        '200':
+          description: Clima actual obtenido exitosamente
+          headers:
+            Content-Type:
+              description: application/json
+              schema:
+                type: string
+                example: application/json
+            x-request-id:
+              description: Identificador de petición (awsRequestId)
+              schema:
+                type: string
+                example: abc123-def456
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeatherResponse'
+              example:
+                city: "Bogotá"
+                country: "Colombia"
+                coordinates:
+                  latitude: 4.60971
+                  longitude: -74.08175
+                timezone: "America/Bogota"
+                current:
+                  temperature:
+                    value: 14.2
+                    unit: "°C"
+                  humidity:
+                    value: 78
+                    unit: "%"
+                  windSpeed:
+                    value: 6.5
+                    unit: "km/h"
+                  condition: "Parcialmente nublado"
+                  observedAt: "2026-10-27T09:00"
+        '400':
+          description: Parámetro inválido
+          headers:
+            Content-Type:
+              $ref: '#/components/headers/ContentTypeJson'
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingCity:
+                  summary: Ciudad ausente
+                  value:
+                    error:
+                      code: "INVALID_REQUEST"
+                      message: "El parámetro city es requerido y debe tener al menos 2 caracteres"
+                emptyCity:
+                  summary: Ciudad vacía
+                  value:
+                    error:
+                      code: "INVALID_REQUEST"
+                      message: "El parámetro city es requerido y debe tener al menos 2 caracteres"
+                tooShort:
+                  summary: Menor a 2 caracteres
+                  value:
+                    error:
+                      code: "INVALID_REQUEST"
+                      message: "El parámetro city es requerido y debe tener al menos 2 caracteres"
+        '404':
+          description: Ciudad no encontrada
+          headers:
+            Content-Type:
+              $ref: '#/components/headers/ContentTypeJson'
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "CITY_NOT_FOUND"
+                  message: "No se encontró la ciudad 'CiudadInventada'"
+        '502':
+          description: Error del upstream (Open-Meteo)
+          headers:
+            Content-Type:
+              $ref: '#/components/headers/ContentTypeJson'
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                upstreamError:
+                  summary: Error general del upstream
+                  value:
+                    error:
+                      code: "UPSTREAM_ERROR"
+                      message: "Error al consultar el servicio de clima"
+                timeout:
+                  summary: Timeout (> 5s)
+                  value:
+                    error:
+                      code: "UPSTREAM_ERROR"
+                      message: "Timeout al consultar el servicio de pronóstico"
+                networkError:
+                  summary: Error de red
+                  value:
+                    error:
+                      code: "UPSTREAM_ERROR"
+                      message: "Error de red al consultar el servicio de pronóstico"
+                invalidJson:
+                  summary: JSON inválido
+                  value:
+                    error:
+                      code: "UPSTREAM_ERROR"
+                      message: "Respuesta inválida del servicio de pronóstico"
+        '500':
+          description: Error interno no controlado
+          headers:
+            Content-Type:
+              $ref: '#/components/headers/ContentTypeJson'
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "INTERNAL_ERROR"
+                  message: "Error interno del servidor"
+components:
+  headers:
+    ContentTypeJson:
+      description: application/json
+      schema:
+        type: string
+        example: application/json
+    XRequestId:
+      description: Identificador de petición
+      schema:
+        type: string
+        example: req-123456
+  schemas:
+    WeatherResponse:
+      type: object
+      required:
+        - city
+        - country
+        - coordinates
+        - timezone
+        - current
+      properties:
+        city:
+          type: string
+          description: Nombre de la ciudad devuelto por geocoding
+          example: "Bogotá"
+        country:
+          type: string
+          description: País devuelto por geocoding
+          example: "Colombia"
+        coordinates:
+          $ref: '#/components/schemas/Coordinates'
+        timezone:
+          type: string
+          description: Zona horaria (auto de Open-Meteo)
+          example: "America/Bogota"
+        current:
+          $ref: '#/components/schemas/CurrentWeather'
+    Coordinates:
+      type: object
+      required:
+        - latitude
+        - longitude
+      properties:
+        latitude:
+          type: number
+          format: double
+          example: 4.60971
+        longitude:
+          type: number
+          format: double
+          example: -74.08175
+    CurrentWeather:
+      type: object
+      required:
+        - temperature
+        - humidity
+        - windSpeed
+        - condition
+        - observedAt
+      properties:
+        temperature:
+          $ref: '#/components/schemas/ValueWithUnit'
+        humidity:
+          $ref: '#/components/schemas/ValueWithUnit'
+        windSpeed:
+          $ref: '#/components/schemas/ValueWithUnit'
+        condition:
+          type: string
+          description: Descripción en español del weather_code WMO
+          example: "Parcialmente nublado"
+        observedAt:
+          type: string
+          format: date-time
+          description: current.time de Open-Meteo
+          example: "2026-10-27T09:00"
+    ValueWithUnit:
+      type: object
+      required:
+        - value
+        - unit
+      properties:
+        value:
+          type: number
+          example: 14.2
+        unit:
+          type: string
+          example: "°C"
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+    ErrorDetail:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+            - CITY_NOT_FOUND
+            - UPSTREAM_ERROR
+            - INTERNAL_ERROR
+          example: "CITY_NOT_FOUND"
+        message:
+          type: string
+          example: "No se encontró la ciudad 'CiudadInventada'"
