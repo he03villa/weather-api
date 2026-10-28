@@ -1,0 +1,22 @@
+services:
+  api:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GEOCODING_BASE_URL: ${GEOCODING_BASE_URL:-https://geocoding-api.open-meteo.com}
+      FORECAST_BASE_URL: ${FORECAST_BASE_URL:-https://api.open-meteo.com}
+      UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:-5000}
+    volumes:
+      - .:/app
+      - /app/node_modules   # evita pisar node_modules del contenedor
+
+  test:
+    build: .
+    profiles: ["test"]
+    command: npm test
+    volumes:
+      - .:/app
+      - /app/node_modules
